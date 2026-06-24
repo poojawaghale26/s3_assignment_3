@@ -37,5 +37,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
           aws-region: ap-south-1
 
+      - name: Show Repository Files
+        run: |
+           pwd
+           ls -la
+           find . -type f
+
       - name: Deploy Infrastructure
-        run: python deploy.py
+        run: |
+          pwd
+          ls -la
+          python ./deploy.py
