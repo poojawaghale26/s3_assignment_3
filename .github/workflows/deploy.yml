@@ -9,6 +9,7 @@ jobs:
 deploy:
 runs-on: ubuntu-latest
 
+```
 permissions:
   id-token: write
   contents: read
@@ -26,6 +27,11 @@ steps:
     run: |
       pip install boto3
 
+  - name: Check Secrets
+    run: |
+      echo "Access Key Exists: ${{ secrets.AWS_ACCESS_KEY != '' }}"
+      echo "Secret Key Exists: ${{ secrets.AWS_SECRET_KEY != '' }}"
+
   - name: Configure AWS Credentials
     uses: aws-actions/configure-aws-credentials@v5
     with:
@@ -35,3 +41,4 @@ steps:
 
   - name: Deploy Infrastructure
     run: python deploy.py
+```
