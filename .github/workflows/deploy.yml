@@ -1,39 +1,41 @@
 name: Deploy AWS Data Pipeline
-
 on:
-push:
-branches:
-- main
+ push:
+  branches:
+  - main
 
 jobs:
-deploy:
-runs-on: ubuntu-latest
+ deploy:
+  runs-on: ubuntu-latest
 
-```
-permissions:
-  id-token: write
-  contents: read
+  permissions:
+    id-token: write
+    contents: read
 
-steps:
-  - name: Checkout Repository
-    uses: actions/checkout@v5
+  steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
 
-  - name: Setup Python
-    uses: actions/setup-python@v6
-    with:
-      python-version: '3.12'
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
-  - name: Install Dependencies
-    run: |
-      pip install boto3
+      - name: Install Dependencies
+        run: |
+          pip install boto3
 
-  - name: Configure AWS Credentials
-    uses: aws-actions/configure-aws-credentials@v5
-    with:
-      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
-      aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
-      aws-region: ap-south-1
+      - name: Check Secrets
+        run: |
+          echo "Access Key Exists: ${{ secrets.AWS_ACCESS_KEY != '' }}"
+          echo "Secret Key Exists: ${{ secrets.AWS_SECRET_KEY != '' }}"
 
-  - name: Deploy Infrastructure
-    run: python deploy.py
-```
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
+          aws-region: ap-south-1
+
+      - name: Deploy Infrastructure
+        run: python deploy.py
