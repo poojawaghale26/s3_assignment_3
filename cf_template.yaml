@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Event Driven Data Pipeline
+
+Resources:
+
+# ---------------------------
+# S3 BUCKETS
+# ---------------------------
+
+  SourceBucket:
+  Type: AWS::S3::Bucket
+
+  CrawlerBucket:
+  Type: AWS::S3::Bucket
+
+  AthenaOutputBucket:
+  Type: AWS::S3::Bucket
+
+# ---------------------------
+# DYNAMODB
+# ---------------------------
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FileMetadataTable
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: object_key
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: object_key
+          KeyType: HASH
+
+# ---------------------------
+# SNS TOPICS
+# ---------------------------
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: FileUploadTopic
+
+  SNSTopicOutput:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: GlueFailureTopic
+
+# ---------------------------
+# IAM ROLE FOR LAMBDA
+# ---------------------------
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+
+        Statement:
+          - Effect: Allow
+
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaPipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+
+        - Effect: Allow
+          Action:
+            - s3:*
+          Resource: "*"
+
+        - Effect: Allow
+          Action:
+            - dynamodb:*
+          Resource: "*"
+
+        - Effect: Allow
+          Action:
+            - glue:*
+          Resource: "*"
+
+        - Effect: Allow
+          Action:
+            - athena:*
+          Resource: "*"
+
+        - Effect: Allow
+          Action:
+            - sns:*
+          Resource: "*"
+
+# ---------------------------
+# LAMBDA FUNCTIONS
+# ---------------------------
+
+  LambdaSaveS3Config:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaSaveS3Config
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+
+      Code:
+        S3Bucket: my-data-pipeline-code-bucket
+        S3Key: lambda/save_s3_config.zip
+
+      Role: ! GetAtt LambdaExecutionRole.Arn
+
+  LambdaRunGlueJob:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaRunGlueJob
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+
+      Code:
+        S3Bucket: my-data-pipeline-code-bucket
+        S3Key: lambda/run_glue_job.zip
+
+      Role: ! GetAtt LambdaExecutionRole.Arn
+
+  LambdaGlueJobSuccess:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaGlueJobSuccess
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+
+      Code:
+        S3Bucket: my-data-pipeline-code-bucket
+        S3Key: lambda/glue_success.zip
+
+      Role: ! GetAtt LambdaExecutionRole.Arn
+
+  LambdaGlueJobFailure:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: LambdaGlueJobFailure
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+
+      Code:
+        S3Bucket: my-data-pipeline-code-bucket
+        S3Key: lambda/glue_failure.zip
+
+      Role: ! GetAtt LambdaExecutionRole.Arn
+
+# ---------------------------
+# GLUE DATABASE
+# ---------------------------
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: ! Ref AWS::AccountId
+
+      DatabaseInput:
+        Name: file_processing_db
+
+# ---------------------------
+# EVENTBRIDGE SUCCESS RULE
+# ---------------------------
+
+  EventBridgeGlueJobSuccess:
+    Type: AWS::Events::Rule
+    Properties:
+
+      Name: GlueJobSuccessRule
+
+      EventPattern:
+        source:
+          - aws.glue
+
+        detail-type:
+          - Glue Job State Change
+
+        detail:
+          state:
+            - SUCCEEDED
+
+      Targets:
+        - Arn: ! GetAtt LambdaGlueJobSuccess.Arn
+          Id: SuccessLambda
+
+# ---------------------------
+# EVENTBRIDGE FAILURE RULE
+# ---------------------------
+
+  EventBridgeGlueJobFailure:
+    Type: AWS::Events::Rule
+    Properties:
+
+      Name: GlueJobFailureRule
+
+      EventPattern:
+        source:
+          - aws.glue
+
+        detail-type:
+          - Glue Job State Change
+
+        detail:
+          state:
+            - FAILED
+
+      Targets:
+        - Arn: ! GetAtt LambdaGlueJobFailure.Arn
+          Id: FailureLambda
+
+# ---------------------------
+# LAMBDA PERMISSIONS
+# ---------------------------
+
+  SuccessPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+
+      Action: lambda:InvokeFunction
+
+      FunctionName:
+        ! Ref LambdaGlueJobSuccess
+
+      Principal: events.amazonaws.com
+
+  FailurePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+
+      Action: lambda:InvokeFunction
+
+      FunctionName:
+        ! Ref LambdaGlueJobFailure
+
+      Principal: events.amazonaws.com
+
+# ---------------------------
+# SNS SUBSCRIPTIONS
+# ---------------------------
+
+  FailureEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+
+      Protocol: email
+
+      Endpoint: poojawaghale1999@gmail.com
+
+      TopicArn: ! Ref SNSTopicOutput
+
+Outputs:
+
+  SourceBucketName:
+    Value: ! Ref SourceBucket
+
+  DynamoDBTableName:
+    Value: ! Ref DynamoDBTable
+
+  SNSTopicArn:
+    Value: ! Ref SNSTopic
+
+  GlueDatabaseName:
+    Value: file_processing_db
+
+  # SNS -> LambdaSaveS3Config
+
+SaveConfigSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: lambda
+    TopicArn: ! Ref SNSTopic
+    Endpoint: ! GetAtt LambdaSaveS3Config.Arn
+
+
+# SNS -> LambdaRunGlueJob
+
+RunGlueJobSubscription:
+  Type: AWS::SNS::Subscription
+  Properties:
+    Protocol: lambda
+    TopicArn: ! Ref SNSTopic
+    Endpoint: ! GetAtt LambdaRunGlueJob.Arn
+
+
+  SaveConfigLambdaPermission:
+  Type: AWS::Lambda::Permission
+  Properties:
+    Action: lambda:InvokeFunction
+    FunctionName: ! Ref LambdaSaveS3Config
+    Principal: sns.amazonaws.com
+    SourceArn: ! Ref SNSTopic
+
+
+RunGlueJobLambdaPermission:
+  Type: AWS::Lambda::Permission
+  Properties:
+    Action: lambda:InvokeFunction
+    FunctionName: ! Ref LambdaRunGlueJob
+    Principal: sns.amazonaws.com
+    SourceArn: ! Ref SNSTopic
