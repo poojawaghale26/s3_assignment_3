@@ -45,11 +45,32 @@ class ZipManager:
 from botocore.exceptions import ClientError
 
 class CloudFormationManager:
-
+    
     def deploy_stack(self):
 
         with open(TEMPLATE_FILE, "r") as f:
             template_body = f.read()
+
+        cf.validate_template(
+            TemplateBody=template_body
+        )
+
+        print("Template validation successful")
+
+        parameters = [
+            {
+                "ParameterKey": "SourceBucketName",
+                "ParameterValue": "my-source-bucket-243050854856"
+            },
+            {
+                "ParameterKey": "CrawlerBucketName",
+                "ParameterValue": "my-crawler-bucket-243050854856"
+            },
+            {
+                "ParameterKey": "AthenaOutputBucketName",
+                "ParameterValue": "my-athena-output-bucket-243050854856"
+            }
+        ]
 
         try:
             cf.describe_stacks(StackName=STACK_NAME)
@@ -59,9 +80,11 @@ class CloudFormationManager:
             cf.update_stack(
                 StackName=STACK_NAME,
                 TemplateBody=template_body,
+                Parameters=parameters,
                 Capabilities=["CAPABILITY_NAMED_IAM"]
             )
 
+            print("Stack update started")
             return True
 
         except ClientError as e:
@@ -78,13 +101,15 @@ class CloudFormationManager:
                 cf.create_stack(
                     StackName=STACK_NAME,
                     TemplateBody=template_body,
+                    Parameters=parameters,
                     Capabilities=["CAPABILITY_NAMED_IAM"]
                 )
 
+                print("Stack creation started")
                 return True
 
             elif "ROLLBACK_COMPLETE" in error_message:
-    
+
                 print("Deleting failed stack...")
 
                 cf.delete_stack(StackName=STACK_NAME)
@@ -97,20 +122,32 @@ class CloudFormationManager:
                 cf.create_stack(
                     StackName=STACK_NAME,
                     TemplateBody=template_body,
+                    Parameters=parameters,
                     Capabilities=["CAPABILITY_NAMED_IAM"]
                 )
+
+                print("Stack recreation started")
+                return True
+
+            elif "No updates are to be performed" in error_message:
+
+                print("No changes detected")
+                return True
+
+            else:
+                raise e
 
         return True
 
 def upload_lambda_packages(s3_manager):
-    lambda_folders = [
+    lambdas_folders = [
         "lambda/save_s3_config",
         "lambda/run_glue_job",
         "lambda/glue_success",
         "lambda/glue_failure"
     ]
 
-    for folder in lambda_folders:
+    for folder in lambdas_folders:
         zip_name = folder.split("/")[-1] + ".zip"
 
         ZipManager.zip_folder(folder, zip_name)
