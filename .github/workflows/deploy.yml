@@ -44,4 +44,7 @@ jobs:
            find . -type f
 
       - name: Deploy Infrastructure
-        run: python deploy.py
+        run: |
+          pwd
+          ls -la
+          python ./deploy.py
